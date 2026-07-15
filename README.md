@@ -1,214 +1,42 @@
-# FinTrack
+# Evaluación de Seguridad — FinTrack Solutions
 
-![status](https://img.shields.io/badge/status-en_diseño-blue)
-![focus](https://img.shields.io/badge/focus-seguridad-critical)
-![auth](https://img.shields.io/badge/auth-JWT_%2B_RBAC-informational)
-![license](https://img.shields.io/badge/license-MIT-lightgrey)
+> Repositorio de portafolio. Evaluación de seguridad para FinTrack Solutions,
+> una fintech ficticia. Documenta un proyecto de consultoría de principio a fin.
 
-**FinTrack** es una aplicación de finanzas personales con una base de seguridad
-sólida. El objetivo no es competir con un banco, sino demostrar cómo se implementa
-correctamente la **autenticación, la gestión de sesiones y el control de acceso
-por roles y permisos (RBAC)** en una aplicación que maneja datos sensibles.
+## Sobre este proyecto
 
-> Proyecto de portafolio. El foco está en la **capa de seguridad**; el módulo de
-> finanzas se mantiene simple a propósito (ingresos, gastos y categorías).
+FinTrack Solutions es una fintech ficticia de gestión de finanzas personales: 28.000 clientes vinculan sus cuentas bancarias, categorizan gastos y programan transferencias, sostenidos por 45 empleados y un equipo de TI de 4 personas sin especialista en seguridad. Tres meses antes de este encargo, un phishing le costó seis días de acceso indebido a su correo corporativo — y la certeza de que no podía saber qué había pasado. Este repositorio documenta la evaluación completa que responde a ese incidente: del modelo de amenazas a la hoja de ruta, con cada control trazado al riesgo que lo exige y con los descartes argumentados por escrito.
 
----
+## Rol asumido
 
-## Descripción general
+Consultor de seguridad externo, contratado por la dirección tras el incidente. Sin equipo, sin presupuesto extra: cada recomendación debe poder operarla el equipo de TI actual.
 
-- Registro e inicio de sesión de usuarios.
-- Panel de administración con **roles y permisos** (RBAC).
-- Cada usuario registra sus **ingresos y gastos** por cuenta y categoría.
-- **Dashboard** con el balance y los totales del mes.
+## Stack de FinTrack (ficticio, representativo)
 
----
+- Aplicación web y móvil sobre una API en nube pública (un solo proveedor).
+- Base de datos gestionada con los datos financieros de los clientes.
+- Agregador bancario y banco socio como terceros críticos (vinculación de cuentas y rieles de transferencia).
+- Suite de correo/colaboración corporativa y GitHub para código y despliegue.
 
-## Seguridad
+## Estructura
 
-Cada control se apoya directamente en el modelo de datos, no es decorativo.
+- `01-business-case.md` — el cliente, sus activos y el alcance
+- `02-architecture/` — arquitectura y superficie de ataque
+- `03-risk-analysis/` — modelo de amenazas y registro de riesgos R1–R6
+- `04-security-controls/` — controles propuestos C1–C6
+- `05-policies/` — políticas mínimas viables
+- `06-incident-response/` — plan de respuesta y playbook
+- `07-postmortem/` — postmortem del incidente
+- `08-recommendations.md` — recomendaciones finales
 
-| Control | Implementación |
-|---------|----------------|
-| Contraseñas | Almacenadas con hash (`password_hash`), nunca en texto plano |
-| Bloqueo de cuenta | Tras varios intentos fallidos (`failed_login_attempts`, `locked_until`) |
-| Sesiones | Refresh tokens hasheados, revocables y con expiración |
-| Trazabilidad | Se registra IP, user-agent y último uso por sesión |
-| Recuperación de acceso | Tokens de un solo uso con vencimiento |
-| Estados de usuario | Activo / Inactivo / Bloqueado / Eliminado |
-| Roles y permisos | Un usuario tiene roles; cada rol agrupa permisos por módulo |
-| Auditoría | Todas las tablas registran `created_at`, `updated_at` y `updated_by` |
+## Cómo navegar el repo
 
----
+En orden: cada documento abre con la **decisión que permite tomar** y cierra apuntando al siguiente. La trazabilidad es la columna vertebral: los activos (A1–A5) del caso de negocio generan los riesgos (R1–R6) del registro, cada riesgo tiene exactamente un control (C1–C6), y cada política cita el R# que la exige. Los diagramas están en Mermaid dentro de los `.md` (convenciones en `02-architecture/diagram-conventions.md`). Con prisa: `08-recommendations.md` resume todo en dos páginas.
 
-## Módulo de finanzas
+## Tesis
 
-- **Cuentas**: efectivo, banco, tarjeta, etc.
-- **Categorías**: sueldo, comida, transporte, servicios, etc.
-- **Movimientos**: cada ingreso o gasto con monto, fecha, cuenta y categoría.
-- **Balance**: total de ingresos menos total de gastos.
+**El perímetro de FinTrack no es la red: es la identidad.** Todos sus caminos de ataque realistas empiezan con una credencial válida en las manos equivocadas — la de un empleado (R1), la de un cliente (R2), la heredada por un tercero (R4) o la que nadie apagó (R6) — y por eso los controles se concentran en autenticación, visibilidad y ciclo de vida de accesos antes que en cajas de red.
 
----
+## Autor
 
-## Modelo de datos
-
-Convención de estados utilizada en varias tablas:
-`AC` = activo · `IN` = inactivo · `BL` = bloqueado · `DL` = eliminado · `CN` = cancelado
-
-### Seguridad y acceso
-
-```dbml
-Table ft_users {
-  id_user               int          [pk, increment]
-  name                  varchar(50)  [not null]
-  email                 varchar(100) [not null, unique]
-  password_hash         varchar(255) [not null]
-  failed_login_attempts int          [default: 0]
-  locked_until          timestamp
-  status                varchar(2)   [default: 'AC', note: 'AC=activo, IN=inactivo, BL=bloqueado, DL=eliminado']
-  last_login_at         timestamp
-  created_at            timestamp
-  updated_at            timestamp
-}
-
-Table ft_user_sessions {
-  id_session         int          [pk, increment]
-  id_user            int          [not null]
-  refresh_token_hash varchar(255) [not null]
-  user_agent         varchar(255)
-  ip_address         varchar(50)
-  last_used_at       timestamp
-  expires_at         timestamp    [not null]
-  created_at         timestamp
-  revoked_at         timestamp
-  revoked_reason     varchar(50)
-}
-
-Table ft_password_reset_tokens {
-  id_token   int          [pk, increment]
-  id_user    int          [not null]
-  token_hash varchar(255) [not null, unique]
-  expires_at timestamp    [not null]
-  used_at    timestamp
-  created_at timestamp
-}
-
-Table ft_roles {
-  id_role     int          [pk, increment]
-  name        varchar(50)  [not null, unique]
-  description varchar(255)
-  status      varchar(2)   [default: 'AC']
-}
-
-Table ft_permissions {
-  id_permission int          [pk, increment]
-  name          varchar(100) [not null, unique]
-  module        varchar(50)
-  description   varchar(255)
-  status        varchar(2)   [default: 'AC']
-}
-
-Table ft_role_permissions {
-  id_role       int [not null]
-  id_permission int [not null]
-
-  indexes {
-    (id_role, id_permission) [pk]
-  }
-}
-
-Table ft_user_roles {
-  id_user     int [not null]
-  id_role     int [not null]
-  assigned_at timestamp
-  assigned_by int
-
-  indexes {
-    (id_user, id_role) [pk]
-  }
-}
-```
-
-### Finanzas
-
-```dbml
-Table ft_accounts {
-  id_account      int           [pk, increment]
-  id_user         int           [not null]
-  name            varchar(100)  [not null, note: 'Efectivo, Banco, Tarjeta...']
-  type            varchar(10)   [note: 'CASH, BANK, CARD, WALLET']
-  initial_balance decimal(12,2) [default: 0]
-  currency        varchar(3)    [default: 'USD']
-  status          varchar(2)    [default: 'AC']
-  created_at      timestamp
-  updated_at      timestamp
-}
-
-Table ft_categories {
-  id_category int          [pk, increment]
-  id_user     int          [note: 'null = categoría global del sistema']
-  name        varchar(100) [not null]
-  type        varchar(3)   [not null, note: 'INC=ingreso, EXP=gasto']
-  status      varchar(2)   [default: 'AC']
-}
-
-Table ft_transactions {
-  id_transaction   int           [pk, increment]
-  id_user          int           [not null]
-  id_account       int           [not null]
-  id_category      int           [not null]
-  type             varchar(3)    [not null, note: 'INC=ingreso, EXP=gasto']
-  amount           decimal(12,2) [not null]
-  description      varchar(255)
-  transaction_date date          [not null]
-  status           varchar(2)    [default: 'AC', note: 'AC=activo, CN=cancelado, DL=eliminado']
-  created_at       timestamp
-  updated_at       timestamp
-}
-```
-
-### Relaciones
-
-```dbml
-// Seguridad
-Ref: ft_user_sessions.id_user          > ft_users.id_user
-Ref: ft_password_reset_tokens.id_user  > ft_users.id_user
-Ref: ft_user_roles.id_user             > ft_users.id_user
-Ref: ft_user_roles.id_role             > ft_roles.id_role
-Ref: ft_role_permissions.id_role       > ft_roles.id_role
-Ref: ft_role_permissions.id_permission > ft_permissions.id_permission
-
-// Finanzas
-Ref: ft_accounts.id_user         > ft_users.id_user
-Ref: ft_categories.id_user       > ft_users.id_user
-Ref: ft_transactions.id_user     > ft_users.id_user
-Ref: ft_transactions.id_account  > ft_accounts.id_account
-Ref: ft_transactions.id_category > ft_categories.id_category
-```
-
----
-
-## Stack sugerido
-
-Aún sin definir; una opción sencilla:
-
-- **Backend**: Node.js + Express
-- **Base de datos**: MySQL o PostgreSQL
-- **Autenticación**: JWT (access token corto + refresh token en `ft_user_sessions`)
-- **Frontend**: React o un panel de administración básico
-
----
-
-## Roadmap
-
-- [ ] Presupuestos por categoría (`ft_budgets`)
-- [ ] Reportes y gráficos de gastos por mes
-- [ ] Exportación a CSV
-- [ ] Verificación de correo en el registro
-- [ ] Autenticación en dos pasos (2FA)
-
----
-
-## Licencia
-
-Proyecto personal de portafolio. Distribuido bajo licencia MIT.
+Fabricio Díaz · [LinkedIn] · [GitHub]
